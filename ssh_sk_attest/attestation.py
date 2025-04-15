@@ -1,3 +1,8 @@
+# This library requires FIDO Metadata to validate attestation certificates
+# Download an mds blob from the FIDO Alliance:
+#
+# curl -Ls https://mds3.fidoalliance.org/ --output mds.jwt
+
 import sys
 import requests
 from base64 import b64decode
@@ -16,13 +21,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-@dataclass
-class AttestationResult:
-    valid: bool
-    error: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None 
-
-# Get the path to the built-in mds.jwt file
 MDS_FILE = os.path.join(os.path.dirname(__file__), 'mds.jwt')
 MDS_CA = b64decode(
     """
@@ -47,7 +45,13 @@ Mx86OyXShkDOOyyGeMlhLxS67ttVb9+E7gUJTb0o2HLO02JQZR7rkpeDMdmztcpH
 WD9f"""
 )
 
-# read a list of type-lenght-value triplets from binary data
+@dataclass
+class AttestationResult:
+    valid: bool
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None 
+
+# read a list of type-length-value triplets from binary data
 def tlvs(data):
     while data:
         t, l = unpack('>hh', data[:4])
@@ -159,7 +163,7 @@ def verify_attestation(
             try:
                 verify_attestation_u2f(attestation_data, challenge)
             except (AssertionError, exceptions.InvalidSignature):
-                return AttestationResult(valid=False, error="Invalid attestation signature")
+                return AttestationResult(valid=False, error="Invalid attestation signature, or unsupported attestation format")
                 
         # Match public keys
         key_type, parsed_pubkey = parse_pubkey(pubkey)
@@ -186,7 +190,24 @@ def verify_attestation(
                 return AttestationResult(valid=False, error="No metadata entry found")
         except Exception as e:
             return AttestationResult(valid=False, error=f"Certificate validation error: {str(e)}")
-            
+
+        status_list = [s.status for s in metadata_entry.status_reports]
+        if 'FIDO_CERTIFIED' not in status_list:
+            return AttestationResult(valid=False, error=f"Security key is not FIDO certified")
+
+        # https://fidoalliance.org/specs/common-specs/fido-registry-v2.2-ps-20220523.html#key-protection-types
+        # software, hardware, tee, secure_element, remote_handle
+        if 'hardware' in metadata_entry.metadata_statement.key_protection:
+            if 'secure_element' not in metadata_entry.metadata_statement.key_protection:
+                return AttestationResult(valid=False, error=f"Security key has hardware key protection, but not using a secure element")
+        else:
+            return AttestationResult(valid=False, error=f"security key has no hardware key protection ({metadata_entry.metadata_statement.key_protection})")
+
+        # https://fidoalliance.org/specs/common-specs/fido-registry-v2.2-ps-20220523.html#matcher-protection-types
+        # software, tee, on_chip
+        if 'on_chip' not in metadata_entry.metadata_statement.matcher_protection:
+            return AttestationResult(valid=False, error=f"Security key has no on_chip matcher protection")
+        
         return AttestationResult(valid=True, metadata={
             'key_type': key_type,
             'aaguid': credential_data.aaguid
