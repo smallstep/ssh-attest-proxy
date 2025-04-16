@@ -1,89 +1,36 @@
 # SSH SK Attestation System
 
-This system provides a secure way to manage SSH keys that are backed by FIDO2 security keys. It ensures that only hardware-backed and attested SSH keys can be used to access the SSH server.
+This prototype project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server.
 
-## Components
+This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host.
 
-1. **API Server** (`api.py`): A FastAPI application that verifies SSH key attestations and stores verified keys in a SQLite database.
-2. **AuthorizedKeysCommand** (`authorized_keys_client.py`): A script that SSHD uses to check if a key is authorized.
-3. **Attestation Library** (`ssh_sk_attest/`): Core library for parsing and verifying SSH key attestations.
-4. **Database Models** (`models.py`): SQLite models for storing verified SSH keys.
+There are two binaries:
 
-## Setup
+### Certificate issuer
 
-1. Install the package:
-   ```bash
-   pip install -e .
-   ```
+`ssh_ca_attest` is an SSH user certificate issuer. Given an SSH pubkey and attestation information, it signs an SSH `-sk` certificates with SSH attestation data embedded as a custom extension in the certificate.
 
-2. Start the API server:
-   ```bash
-   python api.py
-   ```
+To generate a certificate with attestation data:
 
-3. Configure SSHD to use the AuthorizedKeysCommand:
-   Add the following to your `/etc/ssh/sshd_config`:
-   ```
-   AuthorizedKeysCommand /path/to/authorized_keys_client.py %k
-   AuthorizedKeysCommandUser nobody
-   ```
+```
+ssh-keygen -t ed25519 -f ca_key -N ""
 
-4. Restart the SSH server:
-   ```bash
-   sudo systemctl restart sshd
-   ```
+openssl rand 128 > challenge.bin
+ssh-keygen -t ed25519-sk -f id -N "" -O challenge=challenge.bin -O write-attestation=attestation.bin
 
-## Usage
-
-## Generating SSH Keys with Attestation
-
-To generate an SSH key with attestation:
-
-1. Generate a random challenge:
-   ```bash
-   openssl rand 128 > challenge.bin
-   ```
-
-2. Generate the SSH key with attestation:
-   ```bash
-   ssh-keygen -t ed25519-sk -f ./id -N "" -O challenge=challenge.bin -O write-attestation=attestation.bin
-   ```
-
-3. Use the generated files (`id.pub`, `attestation.bin`, `challenge.bin`) with the API to verify and store the key:
-
-To verify and store an SSH key, send a POST request to `/key` with the following files:
-- `pubkey`: The SSH public key file
-- `attestation`: The attestation file
-- `challenge`: The challenge file
-
-Example using curl:
-```bash
-curl -X POST http://localhost:8000/key \
-   -F "pubkey=@test_data/id.pub" \
-   -F "attestation=@test_data/attestation.bin" \
-   -F "challenge=@test_data/challenge.bin"
+bin/ssh_ca_attest ca_key id.pub attestation.bin challenge.bin "carl" id-cert.pub
 ```
 
-### Checking a Key
+### Server authorization
 
-To check if a specific key is authorized, send a GET request to `/key` with the public key as a query parameter:
-```bash
-curl "http://localhost:8000/key?pubkey=AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIGmno0S21EOoxKXQX7HMFiPsdhaBR/ENuFf7q4AP9CPbAAAABHNzaDo="
+`verify_ssh_ca_attestation` is the authorization component. It's designed to run on an SSH server as a global `AuthorizedPrincipalsCommand`, eg.
+
+```
+AuthorizedPrincipalsCommand /bin/verify_ssh_ca_attestation %u %k
 ```
 
-### Listing Authorized Keys
+Any certificate without an attestation will be rejected.
+If a certificate has an attestation, it will be verified.
+The certificate principals are then printed.
+(If the certificate has empty principals, the connection is rejected.)
 
-To list all authorized keys, send a GET request to `/keys`:
-```bash
-curl "http://localhost:8000/keys"
-```
-
-## Development
-
-The project is organized as a Python package with the following structure:
-- `ssh_sk_attest/`: Core library package
-  - `attestation.py`: Attestation parsing and verification
-- `api.py`: FastAPI server implementation
-- `models.py`: Database models
-- `authorized_keys_client.py`: SSHD integration script
-- `setup.py`: Package configuration
