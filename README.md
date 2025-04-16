@@ -1,8 +1,10 @@
 # SSH SK Attestation Proxy
 
-This prototype project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server.
+## Background
 
-Background: OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. In this project, we embed attestation information into an SSH certificate, so that a server can confirm the residency of the key and reject any non-attested keys.
+OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. In this project, we embed attestation information into an SSH certificate, so that a server can confirm the residency of the key and reject any non-attested keys.
+
+This prototype project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server.
 
 This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host.
 
