@@ -1,3 +1,6 @@
+# derived from https://gist.githubusercontent.com/joostd/ed790ade9ddd4b711af6c1b80eaed7ca/raw/53e89a5240de93a2100b95344a377069ba0614dd/ssh-sk-attest.py
+#
+
 # This library requires FIDO Metadata to validate attestation certificates
 # Download an mds blob from the FIDO Alliance:
 #
