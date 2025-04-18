@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,10 +12,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fxamacker/cbor/v2"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	"golang.org/x/crypto/ssh"
 )
 
-type ssh_sk_attestation struct {
+type sshSKAttestation struct {
 	Type          string
 	Certificate   []byte
 	Signature     []byte
@@ -21,7 +27,7 @@ type ssh_sk_attestation struct {
 	Reserved      []byte
 }
 
-func verifyAttestationSignature(att ssh_sk_attestation, challenge []byte) error {
+func verifyAttestationSignature(att sshSKAttestation, challenge []byte) error {
 	// """Verify the attestation signature.
 
 	// Args:
@@ -29,14 +35,15 @@ func verifyAttestationSignature(att ssh_sk_attestation, challenge []byte) error 
 	// 	challenge: Challenge bytes used during key generation
 	// """
 
-	authData := att.AuthData
 	clientDataHash := sha256.Sum256(challenge)
-	signedData := append(authData, clientDataHash[:]...)
+	signedData := make([]byte, len(att.AuthData)+len(clientDataHash))
+	copy(signedData, att.AuthData)
+	copy(signedData[len(att.AuthData):], clientDataHash[:])
 
 	// Parse the DER-encoded attestation certificate
 	attestationCert, err := x509.ParseCertificate(att.Certificate)
 	if err != nil {
-		return fmt.Errorf("failed to parse attestation certificate: %v", err)
+		return fmt.Errorf("failed to parse attestation certificate: %w", err)
 	}
 
 	// Verify the attestation signature
@@ -44,21 +51,58 @@ func verifyAttestationSignature(att ssh_sk_attestation, challenge []byte) error 
 	if !ok {
 		return fmt.Errorf("attestation certificate public key is not an ECDSA key")
 	}
+	if pubKey.Curve != elliptic.P256() {
+		return fmt.Errorf("attestation certificate public key ECDSA curve is not supported")
+	}
 
-	if !ecdsa.VerifyASN1(pubKey, signedData, att.Signature) {
+	sum := sha256.Sum256(signedData)
+	if !ecdsa.VerifyASN1(pubKey, sum[:], att.Signature) {
 		return fmt.Errorf("attestation signature verification failed")
 	}
 
 	return nil
 }
 
-func verifyAttestation(att ssh_sk_attestation, challenge []byte, pubkey ssh.PublicKey) error {
+func verifyAttestation(att sshSKAttestation, challenge []byte, pubkey ssh.PublicKey) error {
 	if err := verifyAttestationSignature(att, challenge); err != nil {
-		return fmt.Errorf("failed to verify attestation signature: %v", err)
+		return fmt.Errorf("failed to verify attestation signature: %w", err)
 	}
 
-	// Parse the attestation data
+	if cert, ok := pubkey.(*ssh.Certificate); ok {
+		pubkey = cert.Key
+	}
+
+	cpk, ok := pubkey.(ssh.CryptoPublicKey)
+	if !ok {
+		return fmt.Errorf("ssh public key does not implement ssh.CryptoPublicKey")
+	}
+
+	// Parse the authenticator data
+	var authData protocol.AuthenticatorData
+	if err := authData.Unmarshal(att.AuthData); err != nil {
+		return fmt.Errorf("failed to unmarshal authenticator data: %w", err)
+	}
+
 	// Verify that the pubkey matches the credential data
+	credPubKey, err := webauthncose.ParsePublicKey(authData.AttData.CredentialPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse credential public key: %w", err)
+	}
+
+	switch k := credPubKey.(type) {
+	case webauthncose.EC2PublicKeyData:
+		ecdsaKey, ok := cpk.CryptoPublicKey().(*ecdsa.PublicKey)
+		if !ok || !bytes.Equal(k.XCoord, ecdsaKey.X.Bytes()) || !bytes.Equal(k.YCoord, ecdsaKey.Y.Bytes()) {
+			return fmt.Errorf("public key does not match the public key in the attestation")
+		}
+	case webauthncose.OKPPublicKeyData:
+		edKey, ok := cpk.CryptoPublicKey().(ed25519.PublicKey)
+		if !ok || !bytes.Equal(k.XCoord, []byte(edKey)) {
+			return fmt.Errorf("public key does not match the public key in the attestation")
+		}
+	default:
+		return fmt.Errorf("unsupported credential public key of type %T", k)
+	}
 
 	return nil
 }
@@ -137,11 +181,18 @@ func main() {
 	attestationData := extBytes[4 : 4+attestationLen]
 	extBytes = extBytes[4+attestationLen:]
 
-	var att ssh_sk_attestation
+	var att sshSKAttestation
 	if err := ssh.Unmarshal(attestationData, &att); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to unmarshal attestation: %v", err)
 		os.Exit(1)
 	}
+	// Authenticator data is CBOR encoded
+	var authData []byte
+	if err := cbor.Unmarshal(att.AuthData, &authData); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to unmarshal authenticator data: %v", err)
+		os.Exit(1)
+	}
+	att.AuthData = authData
 
 	if len(extBytes) < 4 {
 		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
