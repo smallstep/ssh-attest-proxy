@@ -23,9 +23,11 @@ step crypto rand --format raw  128 > challenge.bin
 
 ssh-keygen -t ed25519-sk -f id -N "" -O challenge=challenge.bin -O write-attestation=attestation.bin
 bin/ssh_ca_attest ca_key id.pub attestation.bin challenge.bin "carl" id-cert.pub
+bin/verify_ssh_sk_attestation/main.go carl $(cat id-cert.pub | base64)
 
 ssh-keygen -t ecdsa-sk -f ecdsa_id -N "" -O challenge=challenge.bin -O write-attestation=ecdsa_attestation.bin
 bin/ssh_ca_attest ca_key ecdsa_id.pub ecdsa_attestation.bin challenge.bin "carl" ecdsa_id-cert.pub
+bin/verify_ssh_sk_attestation/main.go carl $(cat ecdsa_id-cert.pub | base64)
 ```
 
 ### Server authorization
