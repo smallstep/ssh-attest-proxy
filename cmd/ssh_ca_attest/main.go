@@ -9,16 +9,55 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
+type integer interface {
+	~int | ~int64
+}
+
+func safeUint32[T integer](x T) (uint32, error) {
+	if x < 0 || int64(x) > math.MaxUint32 {
+		return 0, fmt.Errorf("value %d out of range for uint32", x)
+	}
+
+	return uint32(x), nil
+}
+
+func mustUint32[T integer](x T) uint32 {
+	u32, err := safeUint32(x)
+	if err != nil {
+		panic(err)
+	}
+
+	return u32
+}
+
+func safeUint64[T integer](x T) (uint64, error) {
+	if x < 0 {
+		return 0, fmt.Errorf("value %d out of range for uint64", x)
+	}
+
+	return uint64(x), nil
+}
+
+func mustUint64[T integer](x T) uint64 {
+	u64, err := safeUint64(x)
+	if err != nil {
+		panic(err)
+	}
+
+	return u64
+}
+
 func parseSSHPrivateKey(keyPath string) (interface{}, error) {
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key: %v", err)
+		return nil, fmt.Errorf("failed to read private key: %w", err)
 	}
 
 	block, _ := pem.Decode(keyBytes)
@@ -42,7 +81,7 @@ func parseSSHPrivateKey(keyPath string) (interface{}, error) {
 	case "OPENSSH PRIVATE KEY":
 		key, err := ssh.ParseRawPrivateKey(keyBytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse OpenSSH private key: %v", err)
+			return nil, fmt.Errorf("failed to parse OpenSSH private key: %w", err)
 		}
 		// If it's an Ed25519 key pointer, dereference
 		if k, ok := key.(*ed25519.PrivateKey); ok {
@@ -57,12 +96,12 @@ func parseSSHPrivateKey(keyPath string) (interface{}, error) {
 func parseSSHPublicKey(pubkeyPath string) (ssh.PublicKey, error) {
 	pubkeyBytes, err := os.ReadFile(pubkeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read public key: %v", err)
+		return nil, fmt.Errorf("failed to read public key: %w", err)
 	}
 
 	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(pubkeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %v", err)
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
 
 	return pubkey, nil
@@ -75,19 +114,19 @@ func createCustomExtension(attestationData, challenge []byte) []byte {
 	// Add version string
 	version := []byte("ssh-sk-attest-v01")
 	versionLen := make([]byte, 4)
-	binary.BigEndian.PutUint32(versionLen, uint32(len(version)))
+	binary.BigEndian.PutUint32(versionLen, mustUint32(len(version)))
 	extension = append(extension, versionLen...)
 	extension = append(extension, version...)
 
 	// Add attestation data
 	attestationLen := make([]byte, 4)
-	binary.BigEndian.PutUint32(attestationLen, uint32(len(attestationData)))
+	binary.BigEndian.PutUint32(attestationLen, mustUint32(len(attestationData)))
 	extension = append(extension, attestationLen...)
 	extension = append(extension, attestationData...)
 
 	// Add challenge
 	challengeLen := make([]byte, 4)
-	binary.BigEndian.PutUint32(challengeLen, uint32(len(challenge)))
+	binary.BigEndian.PutUint32(challengeLen, mustUint32(len(challenge)))
 	extension = append(extension, challengeLen...)
 	extension = append(extension, challenge...)
 
@@ -104,19 +143,19 @@ func signSSHCertificate(caKey interface{}, cert *ssh.Certificate, attestationDat
 	case *rsa.PrivateKey:
 		signer, err := ssh.NewSignerFromKey(key)
 		if err != nil {
-			return fmt.Errorf("failed to create signer: %v", err)
+			return fmt.Errorf("failed to create signer: %w", err)
 		}
 		return cert.SignCert(rand.Reader, signer)
 	case ed25519.PrivateKey:
 		signer, err := ssh.NewSignerFromKey(key)
 		if err != nil {
-			return fmt.Errorf("failed to create signer: %v", err)
+			return fmt.Errorf("failed to create signer: %w", err)
 		}
 		return cert.SignCert(rand.Reader, signer)
 	case *ed25519.PrivateKey:
 		signer, err := ssh.NewSignerFromKey(*key)
 		if err != nil {
-			return fmt.Errorf("failed to create signer: %v", err)
+			return fmt.Errorf("failed to create signer: %w", err)
 		}
 		return cert.SignCert(rand.Reader, signer)
 	default:
@@ -168,8 +207,8 @@ func main() {
 		CertType:        ssh.UserCert,
 		KeyId:           "key-attestation",
 		ValidPrincipals: principals,
-		ValidAfter:      uint64(time.Now().Unix()),
-		ValidBefore:     uint64(time.Now().Add(365 * 24 * time.Hour).Unix()),
+		ValidAfter:      mustUint64(time.Now().Unix()),
+		ValidBefore:     mustUint64(time.Now().Add(365 * 24 * time.Hour).Unix()),
 		Permissions: ssh.Permissions{
 			CriticalOptions: map[string]string{},
 			Extensions:      map[string]string{},
@@ -198,7 +237,7 @@ func main() {
 
 	// Write the certificate
 	certBytes := ssh.MarshalAuthorizedKey(cert)
-	if err := os.WriteFile(outputPath, certBytes, 0644); err != nil {
+	if err := os.WriteFile(outputPath, certBytes, 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing certificate: %v\n", err)
 		os.Exit(1)
 	}
@@ -224,7 +263,7 @@ func splitNoEmpty(s, sep string) []string {
 	return out
 }
 
-func split(s, sep string) []string {
+func split(s, _ string) []string {
 	return []string{os.ExpandEnv(s)} // fallback, will be replaced below
 }
 
