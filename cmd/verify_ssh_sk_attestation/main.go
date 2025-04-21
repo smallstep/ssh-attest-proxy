@@ -15,6 +15,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/protocol/webauthncose"
+	"github.com/coreos/go-systemd/v22/journal"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -107,9 +108,18 @@ func verifyAttestation(att sshSKAttestation, challenge []byte, pubkey ssh.Public
 	return nil
 }
 
+func logError(format string, args ...any) {
+    msg := fmt.Sprintf(format, args...)
+    journal.Send(msg, journal.PriErr, map[string]string{
+        "SYSLOG_IDENTIFIER": "verify-ssh-sk",
+    })
+	fmt.Fprintf(os.Stderr, format + "\n", args)
+}
+
 func main() {
 	if len(os.Args) != 3 {
 		fmt.Fprintf(os.Stderr, "Usage: %s <username> <certificate>\n", os.Args[0])
+		logError("Wrong number of program arguments")
 		os.Exit(1)
 	}
 
@@ -119,34 +129,34 @@ func main() {
 	// Decode the base64 certificate
 	certBytes, err := base64.StdEncoding.DecodeString(certBase64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error decoding certificate: %v\n", err)
+		logError("Error decoding certificate")
 		os.Exit(1)
 	}
 
 	// Parse the certificate
 	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing certificate: %v\n", err)
+		logError("Error decoding certificate: %v", err)
 		os.Exit(1)
 	}
 
 	cert, ok := pubkey.(*ssh.Certificate)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Not a certificate\n")
+		logError("Not a certificate");
 		os.Exit(1)
 	}
 
 	// Check for the custom extension
 	extValue, ok := cert.Permissions.Extensions["ssh-sk-attest-v01@openssh.com"]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Custom extension not found\n")
+		logError("Custom extension 'ssk-sk-attest-v01@openssh.com` not found");
 		os.Exit(1)
 	}
 
 	// Decode the extension value
 	extBytes, err := base64.StdEncoding.DecodeString(extValue)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error decoding extension: %v\n", err)
+		logError("Error decoding extension: %v", err)
 		os.Exit(1)
 	}
 
@@ -154,28 +164,28 @@ func main() {
 	// Format: string "ssh-sk-attest-v01", attestation data, challenge
 	// Each field is preceded by a 4-byte length in big-endian
 	if len(extBytes) < 4 {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Error decoding extension: %v", err)
 		os.Exit(1)
 	}
 	versionLen := binary.BigEndian.Uint32(extBytes[:4])
 	if len(extBytes) < int(4+versionLen) {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Invalid extension data")
 		os.Exit(1)
 	}
 	version := string(extBytes[4 : 4+versionLen])
 	if version != "ssh-sk-attest-v01" {
-		fmt.Fprintf(os.Stderr, "Unexpected version: %s\n", version)
+		logError("Unexpected version: %s\n", version)
 		os.Exit(1)
 	}
 	extBytes = extBytes[4+versionLen:]
 
 	if len(extBytes) < 4 {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Invalid attestation data")
 		os.Exit(1)
 	}
 	attestationLen := binary.BigEndian.Uint32(extBytes[:4])
 	if len(extBytes) < int(4+attestationLen) {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Invalid extension data")
 		os.Exit(1)
 	}
 	attestationData := extBytes[4 : 4+attestationLen]
@@ -183,31 +193,31 @@ func main() {
 
 	var att sshSKAttestation
 	if err := ssh.Unmarshal(attestationData, &att); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to unmarshal attestation: %v", err)
+		logError("Failed to unmarshal attestation: %v", err)
 		os.Exit(1)
 	}
 	// Authenticator data is CBOR encoded
 	var authData []byte
 	if err := cbor.Unmarshal(att.AuthData, &authData); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to unmarshal authenticator data: %v", err)
+		logError("Failed to unmarshal authenticator data: %v", err)
 		os.Exit(1)
 	}
 	att.AuthData = authData
 
 	if len(extBytes) < 4 {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Invalid extension data")
 		os.Exit(1)
 	}
 	challengeLen := binary.BigEndian.Uint32(extBytes[:4])
 	if len(extBytes) < int(4+challengeLen) {
-		fmt.Fprintf(os.Stderr, "Invalid extension data\n")
+		logError("Invalid challenge length")
 		os.Exit(1)
 	}
 	challenge := extBytes[4 : 4+challengeLen]
 
 	// Verify the attestation
 	if err := verifyAttestation(att, challenge, pubkey); err != nil {
-		fmt.Fprintf(os.Stderr, "Error verifying attestation: %v\n", err)
+	    logError("Error verifying attestation: %v", err)
 		os.Exit(1)
 	}
 
@@ -224,6 +234,6 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Username not in certificate principals\n")
+	logError("Username not in certificate principals")
 	os.Exit(1)
 }
