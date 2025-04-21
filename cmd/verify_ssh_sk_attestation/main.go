@@ -126,16 +126,10 @@ func main() {
 	username := os.Args[1]
 	keyType := os.Args[2]
 	certBase64 := os.Args[3]
-
-	// Decode the base64 certificate
-	// certBytes, err := base64.StdEncoding.DecodeString(certBase64)
-	// if err != nil {
-	// 	logError("Error decoding certificate")
-	// 	os.Exit(1)
-	// }
+	certLine := keyType + " " + certBase64
 
 	// Parse the certificate
-	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(keyType + " " + certBase64)
+	pubkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(certLine))
 	if err != nil {
 		logError("Error decoding certificate: %v", err)
 		os.Exit(1)
