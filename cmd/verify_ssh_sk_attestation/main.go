@@ -116,6 +116,13 @@ func logError(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format + "\n", args)
 }
 
+func log(format string, args ...any) {
+    msg := fmt.Sprintf(format, args...)
+    journal.Send(msg, journal.PriInfo, map[string]string{
+        "SYSLOG_IDENTIFIER": "verify-ssh-sk",
+    })
+}
+
 func main() {
 	if len(os.Args) != 4 {
 		fmt.Fprintf(os.Stderr, "Usage: %s <username> <key type> <certificate>\n", os.Args[0])
@@ -218,12 +225,14 @@ func main() {
 
 	// Check if the username is in the list of principals, or if the list is empty
 	if len(cert.ValidPrincipals) == 0 {
+		log("Successfully verified attestation for %s", username)
 		fmt.Println(username)
 		os.Exit(0)
 	}
 
 	for _, p := range cert.ValidPrincipals {
 		if p == username {
+			log("Successfully verified attestation for %s", username)
 			fmt.Println(username)
 			os.Exit(0)
 		}
