@@ -117,24 +117,25 @@ func logError(format string, args ...any) {
 }
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <username> <certificate>\n", os.Args[0])
+	if len(os.Args) != 4 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <username> <key type> <certificate>\n", os.Args[0])
 		logError("Wrong number of program arguments")
 		os.Exit(1)
 	}
 
 	username := os.Args[1]
-	certBase64 := os.Args[2]
+	keyType := os.Args[2]
+	certBase64 := os.Args[3]
 
 	// Decode the base64 certificate
-	certBytes, err := base64.StdEncoding.DecodeString(certBase64)
-	if err != nil {
-		logError("Error decoding certificate")
-		os.Exit(1)
-	}
+	// certBytes, err := base64.StdEncoding.DecodeString(certBase64)
+	// if err != nil {
+	// 	logError("Error decoding certificate")
+	// 	os.Exit(1)
+	// }
 
 	// Parse the certificate
-	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
+	pubkey, _, _, _, err := ssh.ParseAuthorizedKey(keyType + " " + certBase64)
 	if err != nil {
 		logError("Error decoding certificate: %v", err)
 		os.Exit(1)
