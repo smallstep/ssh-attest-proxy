@@ -149,9 +149,9 @@ func main() {
 	}
 
 	// Check for the custom extension
-	extValue, ok := cert.Permissions.Extensions["ssh-sk-attest-v01@step.sm"]
+	extValue, ok := cert.Permissions.Extensions["ssh-sk-attest-v01@openssh.com"]
 	if !ok {
-		logError("Custom extension 'ssk-sk-attest-v01@step.sm` not found");
+		logError("Custom extension 'ssk-sk-attest-v01@openssh.com` not found");
 		os.Exit(1)
 	}
 
