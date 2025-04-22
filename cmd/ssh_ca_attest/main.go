@@ -136,7 +136,7 @@ func createCustomExtension(attestationData, challenge []byte) []byte {
 func signSSHCertificate(caKey interface{}, cert *ssh.Certificate, attestationData, challenge []byte) error {
 	// Add custom extension
 	customExt := createCustomExtension(attestationData, challenge)
-	cert.Permissions.Extensions["ssh-sk-attest-v01@openssh.com"] = base64.StdEncoding.EncodeToString(customExt)
+	cert.Permissions.Extensions["ssh-sk-attest-v01@step.sm"] = base64.StdEncoding.EncodeToString(customExt)
 
 
 	// Sign the certificate
