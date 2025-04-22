@@ -138,6 +138,7 @@ func signSSHCertificate(caKey interface{}, cert *ssh.Certificate, attestationDat
 	customExt := createCustomExtension(attestationData, challenge)
 	cert.Permissions.Extensions["ssh-sk-attest-v01@openssh.com"] = base64.StdEncoding.EncodeToString(customExt)
 
+
 	// Sign the certificate
 	switch key := caKey.(type) {
 	case *rsa.PrivateKey:
@@ -211,7 +212,13 @@ func main() {
 		ValidBefore:     mustUint64(time.Now().Add(365 * 24 * time.Hour).Unix()),
 		Permissions: ssh.Permissions{
 			CriticalOptions: map[string]string{},
-			Extensions:      map[string]string{},
+			Extensions: map[string]string{
+				"permit-X11-forwarding":   "",
+				"permit-agent-forwarding": "",
+				"permit-port-forwarding":  "",
+				"permit-pty":              "",
+				"permit-user-rc":          "",
+			},
 		},
 	}
 
