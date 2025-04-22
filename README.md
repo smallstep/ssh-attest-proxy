@@ -14,7 +14,7 @@ There are two binaries:
 
 `ssh_ca_attest` is an SSH user certificate issuer. Given an SSH pubkey and attestation information, it signs an SSH `-sk` certificates with SSH attestation data embedded as a custom extension in the certificate.
 
-To generate a certificate with attestation data:
+Here's an example where we generate certificates with attestation data, using a YubiKey:
 
 ```
 ssh-keygen -t ed25519 -f ca_key -N ""
@@ -24,23 +24,44 @@ step crypto rand --format raw  128 > challenge.bin
 
 ssh-keygen -t ed25519-sk -f id -N "" -O challenge=challenge.bin -O write-attestation=attestation.bin
 bin/ssh_ca_attest ca_key id.pub attestation.bin challenge.bin "carl" id-cert.pub
-bin/verify_ssh_sk_attestation --ca ca.pem carl $(cat id-cert.pub)
 
 ssh-keygen -t ecdsa-sk -f ecdsa_id -N "" -O challenge=challenge.bin -O write-attestation=ecdsa_attestation.bin
 bin/ssh_ca_attest ca_key ecdsa_id.pub ecdsa_attestation.bin challenge.bin "carl" ecdsa_id-cert.pub
-bin/verify_ssh_sk_attestation --ca ca.pem carl $(cat ecdsa_id-cert.pub)
 ```
 
 ### Server authorization
 
-`verify_ssh_ca_attestation` is the authorization component. It's designed to run on an SSH server as a global `AuthorizedPrincipalsCommand`, eg.
+`verify_ssh_ca_attestation` is the authorization component.
+
+It's designed to run on an SSH server as a global `AuthorizedPrincipalsCommand`.
+
+To verify the attestations in the certificates generated above, we need the Yubico FIDO root CA certificate:
 
 ```
-AuthorizedPrincipalsCommand /bin/verify_ssh_ca_attestation %u %t %k
+curl https://developers.yubico.com/PKI/yubico-fido-ca-1.pem -o ca.pem
+```
+
+Then:
+
+```
+bin/verify_ssh_sk_attestation --ca ca.pem carl $(< id-cert.pub)
+bin/verify_ssh_sk_attestation --ca ca.pem carl $(< ecdsa_id-cert.pub)
+```
+
+Both will exit with code 0 on success.
+Errors are printed to stderr and logged to the systemd journal, with identifier `verify-ssh-sk`.
+
+#### Configuring SSHD
+
+You can run this as an `AuthorizedPrincipalsCommand`, eg:
+
+```
+AuthorizedPrincipalsCommand /bin/verify_ssh_ca_attestation --ca /etc/ssh/yubico-fido-ca.pem %u %t %k
 ```
 
 Any certificate without an attestation will be rejected.
 If a certificate has an attestation, it will be verified.
+If the `--ca` flag is passed, the attestation certificate must chain up to the root CA supplied.
 The certificate principals are then printed.
 (If the certificate has empty principals, the connection is rejected.)
 

@@ -114,7 +114,7 @@ func logError(format string, args ...any) {
 	journal.Send(msg, journal.PriErr, map[string]string{
 		"SYSLOG_IDENTIFIER": "verify-ssh-sk",
 	})
-	// fmt.Fprintf(os.Stderr, format + "\n", args)
+	fmt.Fprintf(os.Stderr, format + "\n", args)
 }
 
 func log(format string, args ...any) {
