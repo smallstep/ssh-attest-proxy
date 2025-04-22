@@ -9,13 +9,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"os"
 
+	"github.com/coreos/go-systemd/v22/journal"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/protocol/webauthncose"
-	"github.com/coreos/go-systemd/v22/journal"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -109,30 +110,42 @@ func verifyAttestation(att sshSKAttestation, challenge []byte, pubkey ssh.Public
 }
 
 func logError(format string, args ...any) {
-    msg := fmt.Sprintf(format, args...)
-    journal.Send(msg, journal.PriErr, map[string]string{
-        "SYSLOG_IDENTIFIER": "verify-ssh-sk",
-    })
+	msg := fmt.Sprintf(format, args...)
+	journal.Send(msg, journal.PriErr, map[string]string{
+		"SYSLOG_IDENTIFIER": "verify-ssh-sk",
+	})
 	// fmt.Fprintf(os.Stderr, format + "\n", args)
 }
 
 func log(format string, args ...any) {
-    msg := fmt.Sprintf(format, args...)
-    journal.Send(msg, journal.PriInfo, map[string]string{
-        "SYSLOG_IDENTIFIER": "verify-ssh-sk",
-    })
+	msg := fmt.Sprintf(format, args...)
+	journal.Send(msg, journal.PriInfo, map[string]string{
+		"SYSLOG_IDENTIFIER": "verify-ssh-sk",
+	})
+}
+
+func usage() {
+	w := flag.CommandLine.Output()
+	fmt.Fprintf(w, "Usage: %s [--ca ca.pem] <username> <key type> <certificate>\n", os.Args[0])
+	flag.PrintDefaults()
+	os.Exit(1)
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <username> <key type> <certificate>\n", os.Args[0])
+	var caFile string
+	flag.StringVar(&caFile, "ca", "", "Root certificates used to verify the attestation certificate.")
+	flag.Usage = usage
+	flag.Parse()
+
+	if len(flag.Args()) != 3 {
+		flag.Usage()
 		logError("Wrong number of program arguments")
 		os.Exit(1)
 	}
 
-	username := os.Args[1]
-	keyType := os.Args[2]
-	certBase64 := os.Args[3]
+	username := flag.Arg(0)
+	keyType := flag.Arg(1)
+	certBase64 := flag.Arg(2)
 	certLine := keyType + " " + certBase64
 
 	// Parse the certificate
@@ -144,14 +157,14 @@ func main() {
 
 	cert, ok := pubkey.(*ssh.Certificate)
 	if !ok {
-		logError("Not a certificate");
+		logError("Not a certificate")
 		os.Exit(1)
 	}
 
 	// Check for the custom extension
 	extValue, ok := cert.Permissions.Extensions["ssh-sk-attest-v01@openssh.com"]
 	if !ok {
-		logError("Custom extension 'ssk-sk-attest-v01@openssh.com` not found");
+		logError("Custom extension 'ssk-sk-attest-v01@openssh.com` not found")
 		os.Exit(1)
 	}
 
@@ -198,6 +211,32 @@ func main() {
 		logError("Failed to unmarshal attestation: %v", err)
 		os.Exit(1)
 	}
+
+	if caFile != "" {
+		attestationCert, err := x509.ParseCertificate(att.Certificate)
+		if err != nil {
+			logError("Failed to parse attestation certificate: %v", err)
+			os.Exit(1)
+		}
+
+		b, err := os.ReadFile(caFile)
+		if err != nil {
+			logError("Failed to open ca file: %v", err)
+			os.Exit(1)
+		}
+
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(b)
+
+		if _, err := attestationCert.Verify(x509.VerifyOptions{
+			Roots:     pool,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		}); err != nil {
+			logError("Failed to verify attestation certificate: %v", err)
+			os.Exit(1)
+		}
+	}
+
 	// Authenticator data is CBOR encoded
 	var authData []byte
 	if err := cbor.Unmarshal(att.AuthData, &authData); err != nil {
@@ -219,7 +258,7 @@ func main() {
 
 	// Verify the attestation
 	if err := verifyAttestation(att, challenge, pubkey); err != nil {
-	    logError("Error verifying attestation: %v", err)
+		logError("Error verifying attestation: %v", err)
 		os.Exit(1)
 	}
 
