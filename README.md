@@ -18,16 +18,17 @@ To generate a certificate with attestation data:
 
 ```
 ssh-keygen -t ed25519 -f ca_key -N ""
+curl -sLo ca.pem https://developers.yubico.com/PKI/yubico-piv-ca-1.pem
 
 step crypto rand --format raw  128 > challenge.bin
 
 ssh-keygen -t ed25519-sk -f id -N "" -O challenge=challenge.bin -O write-attestation=attestation.bin
 bin/ssh_ca_attest ca_key id.pub attestation.bin challenge.bin "carl" id-cert.pub
-bin/verify_ssh_sk_attestation carl $(cat id-cert.pub | base64)
+bin/verify_ssh_sk_attestation --ca ca.pem carl $(cat id-cert.pub)
 
 ssh-keygen -t ecdsa-sk -f ecdsa_id -N "" -O challenge=challenge.bin -O write-attestation=ecdsa_attestation.bin
 bin/ssh_ca_attest ca_key ecdsa_id.pub ecdsa_attestation.bin challenge.bin "carl" ecdsa_id-cert.pub
-bin/verify_ssh_sk_attestation carl $(cat ecdsa_id-cert.pub | base64)
+bin/verify_ssh_sk_attestation --ca ca.pem carl $(cat ecdsa_id-cert.pub)
 ```
 
 ### Server authorization
@@ -35,7 +36,7 @@ bin/verify_ssh_sk_attestation carl $(cat ecdsa_id-cert.pub | base64)
 `verify_ssh_ca_attestation` is the authorization component. It's designed to run on an SSH server as a global `AuthorizedPrincipalsCommand`, eg.
 
 ```
-AuthorizedPrincipalsCommand /bin/verify_ssh_ca_attestation %u %k
+AuthorizedPrincipalsCommand /bin/verify_ssh_ca_attestation %u %t %k
 ```
 
 Any certificate without an attestation will be rejected.
