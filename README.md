@@ -2,7 +2,9 @@
 
 ## Background
 
-OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. In this project, we embed attestation information into an SSH certificate, so that a server can confirm the residency of the key and reject any non-attested keys.
+OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. Nor is it possible for a server to prove the hardware identity of a security key.
+
+For this prototype project, we embed attestation information into an SSH certificate, so that a server can confirm the residency of the key:
 
 ```
 id-cert.pub:
@@ -26,7 +28,7 @@ id-cert.pub:
                 bd:50:e9:bc:c8:fe:...
 ```
 
-This prototype project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server.
+This project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server. This could be extended to test attestation information against an inventory of devices that are allowed to SSH.
 
 This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host.
 
@@ -60,14 +62,14 @@ It's designed to run on an SSH server as a global `AuthorizedPrincipalsCommand`.
 To verify the attestations in the certificates generated above, we need the Yubico FIDO root CA certificate:
 
 ```
-curl https://developers.yubico.com/PKI/yubico-fido-ca-1.pem -o ca.pem
+curl https://developers.yubico.com/PKI/yubico-fido-ca-1.pem -o yubico-ca.pem
 ```
 
 Then:
 
 ```
-bin/verify_ssh_sk_attestation --ca ca.pem carl $(< id-cert.pub)
-bin/verify_ssh_sk_attestation --ca ca.pem carl $(< ecdsa_id-cert.pub)
+bin/verify_ssh_sk_attestation --ca yubico-ca.pem carl $(< id-cert.pub)
+bin/verify_ssh_sk_attestation --ca yubico-ca.pem carl $(< ecdsa_id-cert.pub)
 ```
 
 Both will exit with code 0 on success.
