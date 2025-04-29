@@ -4,6 +4,28 @@
 
 OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. In this project, we embed attestation information into an SSH certificate, so that a server can confirm the residency of the key and reject any non-attested keys.
 
+```
+id-cert.pub:
+        Type: sk-ssh-ed25519-cert-v01@openssh.com user certificate
+        Public key: SK-ED25519-CERT SHA256:3zjLLEQv8OELBVQwZLdzSlnqVYxq5aV3nZuqXVHtrzg
+        Signing CA: ED25519 SHA256:tZa6QeXJgtjXhBrOhiBsFpZRRBQDB6wzC01HX0i8JnE (using ssh-ed25519)
+        Key ID: "key-attestation"
+        Serial: 1
+        Valid: from 2025-04-28T14:12:18 to 2026-04-28T14:12:18
+        Principals:
+                carl
+        Critical Options: (none)
+        Extensions:
+                ssh-sk-attest-v01@step.sm AAAAEXAMPLEzaC1zay1hdHRlc3QtdjAxAAAELwAAABFzc2g...
+                permit-user-rc
+                permit-X11-forwarding
+                permit-agent-forwarding
+                permit-port-forwarding
+                permit-pty
+        Signature:
+                bd:50:e9:bc:c8:fe:...
+```
+
 This prototype project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server.
 
 This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host.
