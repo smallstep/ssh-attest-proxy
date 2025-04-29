@@ -1,5 +1,7 @@
 # SSH SK Attestation Proxy
 
+**This is an educational project and is not suitable for production use.**
+
 ## Background
 
 OpenSSH has `-sk` type keys that are designed to be generated and stored on hardware security keys. But, for privacy reasons, there is no way for a server to prove that any `-sk` key is actually stored in hardware and not exportable. Nor is it possible for a server to prove the hardware identity of a security key.
@@ -30,7 +32,7 @@ id-cert.pub:
 
 This project ensures that only hardware-backed and attested SSH certificates can be used to access an OpenSSH server. This could be extended to test attestation information against an inventory of devices that are allowed to SSH.
 
-This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host.
+This could be run on an SSH bastion host (aka SSH jump box), to confirm attestations before passing a connection on to a final host. However, this project is not suitable for production deployments. A production version would implement key attestation verification in an SSH Certificate Authority, not on the SSH server itself.
 
 There are two binaries:
 
