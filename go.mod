@@ -6,7 +6,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/go-webauthn/webauthn v0.12.3
-	golang.org/x/crypto v0.37.0
+	golang.org/x/crypto v0.45.0
 )
 
 require (
@@ -16,5 +16,5 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 )
